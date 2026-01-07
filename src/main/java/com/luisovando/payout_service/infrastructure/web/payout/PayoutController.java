@@ -3,6 +3,7 @@ package com.luisovando.payout_service.infrastructure.web.payout;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutCommand;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutResult;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutUseCase;
+import com.luisovando.payout_service.domain.valueobject.MoneyVO;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,8 +23,7 @@ public class PayoutController {
     public ResponseEntity<CreatePayoutResponse> create(@Valid @RequestBody CreatePayoutRequest request) {
         CreatePayoutCommand command = new CreatePayoutCommand(
                 request.companyId(),
-                request.amount(),
-                request.currency(),
+                MoneyVO.of(request.amount(), request.currency()),
                 request.idempotencyKey()
         );
 

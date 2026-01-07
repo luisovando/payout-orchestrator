@@ -1,12 +1,11 @@
 package com.luisovando.payout_service.application.usecase.createpayout;
 
-import com.luisovando.payout_service.domain.valueobject.CurrencyVO;
+import com.luisovando.payout_service.domain.valueobject.MoneyVO;
 import com.luisovando.payout_service.infrastructure.persistence.entity.PayoutEntity;
 import com.luisovando.payout_service.infrastructure.persistence.repository.PayoutRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -22,35 +21,26 @@ public class CreatePayoutUseCase {
         this.payoutRepository = payoutRepository;
     }
 
-    private String validateAndNormalizeCurrency(CreatePayoutCommand command) {
+    private void validate(CreatePayoutCommand command) {
         Objects.requireNonNull(command, "command is required");
         Objects.requireNonNull(command.companyId(), "companyId is required");
-        Objects.requireNonNull(command.amount(), "amount is required");
-        Objects.requireNonNull(command.currency(), "currency is required");
+        Objects.requireNonNull(command.money(), "money is required");
         Objects.requireNonNull(command.idempotencyKey(), "idempotencyKey is required");
-
-        if (command.amount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("amount must be greater than 0");
-        }
 
         if (command.idempotencyKey().isBlank()) {
             throw new IllegalArgumentException("idempotencyKey must not be blank");
         }
 
-        CurrencyVO currency = CurrencyVO.of(command.currency());
-
-        if (!SUPPORTED_CURRENCIES.contains(currency.value())) {
+        if (!SUPPORTED_CURRENCIES.contains(command.money().currency().value())) {
             throw new IllegalArgumentException("currency not supported");
         }
-
-        return currency.value();
     }
 
     /**
      * Executes the payout creation use case.
      */
     public CreatePayoutResult execute(CreatePayoutCommand command) {
-        String normalizedCurrency = this.validateAndNormalizeCurrency(command);
+        this.validate(command);
 
         Optional<PayoutEntity> payout = this.payoutRepository.findByCompanyIdAndIdempotencyKey(command.companyId(), command.idempotencyKey());
 
@@ -60,8 +50,8 @@ public class CreatePayoutUseCase {
 
         PayoutEntity newPayout = PayoutEntity.createNew(
                 command.companyId(),
-                command.amount(),
-                normalizedCurrency,
+                command.money().amount(),
+                command.money().currency().value(),
                 INITIAL_STATUS,
                 command.idempotencyKey()
         );

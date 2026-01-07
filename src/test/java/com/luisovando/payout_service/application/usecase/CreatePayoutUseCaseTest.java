@@ -3,6 +3,7 @@ package com.luisovando.payout_service.application.usecase;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutCommand;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutResult;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutUseCase;
+import com.luisovando.payout_service.domain.valueobject.MoneyVO;
 import com.luisovando.payout_service.infrastructure.persistence.entity.PayoutEntity;
 import com.luisovando.payout_service.infrastructure.persistence.repository.PayoutRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,8 +46,7 @@ public class CreatePayoutUseCaseTest {
         idempotencyKey = "test-key-abd123";
         command = new CreatePayoutCommand(
                 companyId,
-                new BigDecimal("1000.50"),
-                " usd ",
+                MoneyVO.of(new BigDecimal("1000.50"), " usd "),
                 idempotencyKey
         );
     }
@@ -168,8 +168,7 @@ public class CreatePayoutUseCaseTest {
     void shouldThrowWhenCurrencyIsInvalid() {
         CreatePayoutCommand invalidCommand = new CreatePayoutCommand(
                 companyId,
-                new BigDecimal("100.50"),
-                " cad ",
+                MoneyVO.of(new BigDecimal("100.50"), " cad "),
                 idempotencyKey
         );
 
@@ -181,27 +180,10 @@ public class CreatePayoutUseCaseTest {
     }
 
     @Test
-    void shouldThrowWhenAmountIsZeroOrNegative() {
-        CreatePayoutCommand invalidCommand = new CreatePayoutCommand(
-                companyId,
-                new BigDecimal(BigInteger.ZERO),
-                "USD",
-                idempotencyKey
-        );
-
-        assertThatThrownBy(() -> useCase.execute(invalidCommand))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("amount must be greater than 0");
-
-        verifyNoInteractions(payoutRepository);
-    }
-
-    @Test
     void shouldThrowWhenIdempotencyKeyIsBlank() {
         CreatePayoutCommand invalidCommand = new CreatePayoutCommand(
                 companyId,
-                new BigDecimal("1000.50"),
-                "USD",
+                MoneyVO.of(new BigDecimal("1000.50"), "USD"),
                 ""
         );
 
