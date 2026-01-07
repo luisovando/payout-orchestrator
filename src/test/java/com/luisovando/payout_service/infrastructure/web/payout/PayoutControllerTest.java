@@ -1,0 +1,124 @@
+package com.luisovando.payout_service.infrastructure.web.payout;
+
+import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutCommand;
+import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutResult;
+import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutUseCase;
+import com.luisovando.payout_service.infrastructure.web.error.ApiExceptionHandler;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@WebMvcTest(PayoutController.class)
+@Import(ApiExceptionHandler.class)
+public class PayoutControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private CreatePayoutUseCase createPayoutUseCase;
+
+    @Test
+    void shouldReturn201WhenPayoutCreated() throws Exception {
+        UUID payoutId = UUID.randomUUID();
+
+        when(createPayoutUseCase.execute(any(CreatePayoutCommand.class)))
+                .thenReturn(new CreatePayoutResult(payoutId, "CREATED"));
+
+        String body = """
+                {
+                    "companyId": "11111111-1111-1111-1111-111111111111",
+                    "amount": 1000.50,
+                    "currency": "USD",
+                    "idempotencyKey": "test-key-1"
+                }
+                """;
+
+        mockMvc.perform(
+                        post("/payouts")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.payoutId").value(payoutId.toString()))
+                .andExpect(jsonPath("$.status").value("CREATED"));
+
+        verify(createPayoutUseCase).execute(any(CreatePayoutCommand.class));
+    }
+
+    @Test
+    void shouldReturn400WhenRequestIsInvalid() throws Exception {
+        String body = """
+                {
+                    "companyId": "11111111-1111-1111-1111-111111111111",
+                    "amount": 1000.50,
+                    "currency": "MX",
+                    "idempotencyKey": "test-key-1"
+                }
+                """;
+        mockMvc.perform(post("/payouts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(createPayoutUseCase);
+    }
+
+    @Test
+    void shouldReturn400WhenRequestBodyInvalid() throws Exception {
+        mockMvc.perform(post("/payouts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "companyId": "11111111-1111-1111-1111-111111111111",
+                                  "amount": 1000.50,
+                                  "currency": "MX",
+                                  "idempotencyKey": "test-key-1"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUEST_INVALID"));
+
+        verifyNoInteractions(createPayoutUseCase);
+    }
+
+
+    @Test
+    void shouldReturn400WhenUseCaseThrowsIllegalArgument() throws Exception {
+        when(createPayoutUseCase.execute(any(CreatePayoutCommand.class)))
+                .thenThrow(new IllegalArgumentException("company is blocked"));
+
+        mockMvc.perform(post("/payouts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "companyId": "11111111-1111-1111-1111-111111111111",
+                                  "amount": 1000.50,
+                                  "currency": "CAN",
+                                  "idempotencyKey": "test-key-1"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @TestConfiguration
+    static class TestConfig {
+        @Bean
+        CreatePayoutUseCase createPayoutUseCase() {
+            return mock(CreatePayoutUseCase.class);
+        }
+    }
+}

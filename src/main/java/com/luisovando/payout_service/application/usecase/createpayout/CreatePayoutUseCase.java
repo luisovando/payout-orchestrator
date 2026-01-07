@@ -8,12 +8,14 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @Transactional
 public class CreatePayoutUseCase {
     private final PayoutRepository payoutRepository;
     private static final String INITIAL_STATUS = "CREATED";
+    private static final Set<String> SUPPORTED_CURRENCIES = Set.of("USD", "MXN", "EUR");
 
     public CreatePayoutUseCase(PayoutRepository payoutRepository) {
         this.payoutRepository = payoutRepository;
@@ -30,20 +32,14 @@ public class CreatePayoutUseCase {
             throw new IllegalArgumentException("amount must be greater than 0");
         }
 
-        if (command.currency().isBlank()) {
-            throw new IllegalArgumentException("currency must not be blank");
-        }
+        String currency = command.currency().trim().toUpperCase();
 
-        if (command.currency().trim().toUpperCase().length() != 3) {
-            throw new IllegalArgumentException("currency must be ISO-4217 (3 chars)");
+        if (!SUPPORTED_CURRENCIES.contains(currency)) {
+            throw new IllegalArgumentException("currency not supported");
         }
 
         if (command.idempotencyKey().isBlank()) {
             throw new IllegalArgumentException("idempotencyKey must not be blank");
-        }
-
-        if (command.idempotencyKey().length() > 128) {
-            throw new IllegalArgumentException("idempotencyKey max length is 128");
         }
     }
 

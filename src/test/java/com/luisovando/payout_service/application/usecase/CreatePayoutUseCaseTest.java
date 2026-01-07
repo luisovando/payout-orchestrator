@@ -169,13 +169,13 @@ public class CreatePayoutUseCaseTest {
         CreatePayoutCommand invalidCommand = new CreatePayoutCommand(
                 companyId,
                 new BigDecimal("100.50"),
-                "USDD",
+                "CAD",
                 idempotencyKey
         );
 
         assertThatThrownBy(() -> useCase.execute(invalidCommand))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("currency must be ISO-4217 (3 chars)");
+                .hasMessageContaining("currency not supported");
     }
 
     @Test
