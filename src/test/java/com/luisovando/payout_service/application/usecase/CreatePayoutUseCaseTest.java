@@ -46,7 +46,7 @@ public class CreatePayoutUseCaseTest {
         command = new CreatePayoutCommand(
                 companyId,
                 new BigDecimal("1000.50"),
-                "USD",
+                " usd ",
                 idempotencyKey
         );
     }
@@ -169,13 +169,15 @@ public class CreatePayoutUseCaseTest {
         CreatePayoutCommand invalidCommand = new CreatePayoutCommand(
                 companyId,
                 new BigDecimal("100.50"),
-                "CAD",
+                " cad ",
                 idempotencyKey
         );
 
         assertThatThrownBy(() -> useCase.execute(invalidCommand))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("currency not supported");
+
+        verifyNoInteractions(payoutRepository);
     }
 
     @Test
@@ -190,6 +192,8 @@ public class CreatePayoutUseCaseTest {
         assertThatThrownBy(() -> useCase.execute(invalidCommand))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("amount must be greater than 0");
+
+        verifyNoInteractions(payoutRepository);
     }
 
     @Test
@@ -204,5 +208,7 @@ public class CreatePayoutUseCaseTest {
         assertThatThrownBy(() -> useCase.execute(invalidCommand))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("idempotencyKey must not be blank");
+
+        verifyNoInteractions(payoutRepository);
     }
 }
