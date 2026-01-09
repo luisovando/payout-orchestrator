@@ -4,6 +4,7 @@ import com.luisovando.payout_service.application.usecase.createpayout.CreatePayo
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutResult;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutUseCase;
 import com.luisovando.payout_service.infrastructure.web.error.ApiExceptionHandler;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -30,17 +31,22 @@ public class PayoutControllerTest {
     @Autowired
     private CreatePayoutUseCase createPayoutUseCase;
 
+    @AfterEach
+    void tearDown() {
+        reset(createPayoutUseCase);
+    }
+
     @Test
     void shouldReturn201WhenPayoutCreated() throws Exception {
         UUID payoutId = UUID.randomUUID();
 
         when(createPayoutUseCase.execute(any(CreatePayoutCommand.class)))
-                .thenReturn(new CreatePayoutResult(payoutId, "CREATED"));
+                .thenReturn(new CreatePayoutResult(payoutId, "CREATED", true));
 
         String body = """
                 {
                     "companyId": "11111111-1111-1111-1111-111111111111",
-                    "amount": 1000.50,
+                    "amount": "1000.50",
                     "currency": "USD",
                     "idempotencyKey": "test-key-1"
                 }
@@ -55,7 +61,7 @@ public class PayoutControllerTest {
                 .andExpect(jsonPath("$.payoutId").value(payoutId.toString()))
                 .andExpect(jsonPath("$.status").value("CREATED"));
 
-        verify(createPayoutUseCase).execute(any(CreatePayoutCommand.class));
+        verify(createPayoutUseCase, times(1)).execute(any(CreatePayoutCommand.class));
     }
 
     @Test
@@ -83,7 +89,7 @@ public class PayoutControllerTest {
                         .content("""
                                 {
                                   "companyId": "11111111-1111-1111-1111-111111111111",
-                                  "amount": 1000.50,
+                                  "amount": "1000.50",
                                   "currency": "MX",
                                   "idempotencyKey": "test-key-1"
                                 }
@@ -105,14 +111,69 @@ public class PayoutControllerTest {
                         .content("""
                                 {
                                   "companyId": "11111111-1111-1111-1111-111111111111",
-                                  "amount": 1000.50,
-                                  "currency": "CAN",
+                                  "amount": "1000.50",
+                                  "currency": "CAD",
                                   "idempotencyKey": "test-key-1"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(createPayoutUseCase, times(1)).execute(any(CreatePayoutCommand.class));
     }
+
+    @Test
+    void shouldReturn200WhenIdempotentReplay() throws Exception {
+        UUID existingPayoutId = UUID.randomUUID();
+        CreatePayoutResult existingResult = new CreatePayoutResult(existingPayoutId, "PROCESSING", false);
+        
+        when(createPayoutUseCase.execute(any(CreatePayoutCommand.class)))
+                .thenReturn(existingResult);
+
+        mockMvc.perform(post("/payouts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "companyId": "11111111-1111-1111-1111-111111111111",
+                                  "amount": "1000.50",
+                                  "currency": "USD",
+                                  "idempotencyKey": "test-key-1"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payoutId").value(existingPayoutId.toString()))
+                .andExpect(jsonPath("$.status").value("PROCESSING"));
+
+        verify(createPayoutUseCase, times(1)).execute(any(CreatePayoutCommand.class));
+    }
+
+    @Test
+    void shouldReturn201WhenNewPayoutCreated() throws Exception {
+        UUID newPayoutId = UUID.randomUUID();
+        CreatePayoutResult newResult = new CreatePayoutResult(newPayoutId, "CREATED", true);
+        
+        when(createPayoutUseCase.execute(any(CreatePayoutCommand.class)))
+                .thenReturn(newResult);
+
+        mockMvc.perform(post("/payouts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "companyId": "11111111-1111-1111-1111-111111111111",
+                                  "amount": "1000.50",
+                                  "currency": "USD",
+                                  "idempotencyKey": "test-key-1"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.payoutId").value(newPayoutId.toString()))
+                .andExpect(jsonPath("$.status").value("CREATED"))
+                .andExpect(header().string("Location", "/payouts/" + newPayoutId.toString()));
+
+        verify(createPayoutUseCase, times(1)).execute(any(CreatePayoutCommand.class));
+    }
+
+    
 
     @TestConfiguration
     static class TestConfig {

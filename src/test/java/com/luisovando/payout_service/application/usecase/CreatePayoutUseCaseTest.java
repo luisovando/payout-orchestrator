@@ -14,9 +14,9 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -65,18 +65,18 @@ public class CreatePayoutUseCaseTest {
      */
     @Test
     void shouldCreateANewPayoutWhenNotExists() {
-        when(payoutRepository.save(any(PayoutEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
         when(payoutRepository.findByCompanyIdAndIdempotencyKey(
                 eq(command.companyId()),
                 eq(command.idempotencyKey())
         )).thenReturn(Optional.empty());
 
+        when(payoutRepository.save(any(PayoutEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
         CreatePayoutResult result = useCase.execute(command);
 
+        verify(payoutRepository).findByCompanyIdAndIdempotencyKey(eq(command.companyId()), eq(command.idempotencyKey()));
         verify(payoutRepository).save(payoutCaptor.capture());
-        verify(payoutRepository).findByCompanyIdAndIdempotencyKey(eq(companyId), eq(idempotencyKey));
-        verify(payoutRepository).save(any(PayoutEntity.class));
 
         PayoutEntity savedPayout = payoutCaptor.getValue();
         assertThat(savedPayout.getCompanyId()).isEqualTo(companyId);
@@ -87,6 +87,7 @@ public class CreatePayoutUseCaseTest {
 
         assertThat(result.payoutId()).isNotNull();
         assertThat(result.status()).isEqualTo("CREATED");
+        assertThat(result.created()).isTrue();
 
         verifyNoMoreInteractions(payoutRepository);
     }
@@ -126,6 +127,7 @@ public class CreatePayoutUseCaseTest {
 
         assertThat(result.payoutId()).isEqualTo(existing.getId());
         assertThat(result.status()).isEqualTo(existing.getStatus());
+        assertThat(result.created()).isFalse();
 
         verifyNoMoreInteractions(payoutRepository);
     }
@@ -160,6 +162,36 @@ public class CreatePayoutUseCaseTest {
 
         assertThat(result.payoutId()).isEqualTo(existing.getId());
         assertThat(result.status()).isEqualTo(existing.getStatus());
+        assertThat(result.created()).isFalse();
+
+        verifyNoMoreInteractions(payoutRepository);
+    }
+
+    @Test
+    void shouldReturnExistingPayoutWhenRaceConditionOccurs() {
+        PayoutEntity existing = PayoutEntity.createNew(
+                companyId,
+                new BigDecimal("1000.50"),
+                "USD",
+                "PROCESSING",
+                idempotencyKey
+        );
+
+        when(payoutRepository.findByCompanyIdAndIdempotencyKey(eq(companyId), eq(idempotencyKey)))
+                .thenReturn(Optional.empty()) // First call returns empty (no existing payout)
+                .thenReturn(Optional.of(existing)); // Second call in catch block returns existing payout
+
+        when(payoutRepository.save(any(PayoutEntity.class)))
+                .thenThrow(new DataIntegrityViolationException("Duplicate entry", new RuntimeException("uk_payouts_company_id_idempotency_key")));
+
+        CreatePayoutResult result = useCase.execute(command);
+
+        verify(payoutRepository, times(2)).findByCompanyIdAndIdempotencyKey(eq(companyId), eq(idempotencyKey));
+        verify(payoutRepository, times(1)).save(any(PayoutEntity.class));
+
+        assertThat(result.payoutId()).isEqualTo(existing.getId());
+        assertThat(result.status()).isEqualTo(existing.getStatus());
+        assertThat(result.created()).isFalse();
 
         verifyNoMoreInteractions(payoutRepository);
     }

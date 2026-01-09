@@ -5,6 +5,7 @@ import com.luisovando.payout_service.application.usecase.createpayout.CreatePayo
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutUseCase;
 import com.luisovando.payout_service.domain.valueobject.MoneyVO;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,7 +32,12 @@ public class PayoutController {
 
         URI location = URI.create("/payouts/" + result.payoutId());
 
-        return ResponseEntity.created(location)
+        if (!result.created()) {
+            return ResponseEntity.status(HttpStatus.OK)
+                    .body(new CreatePayoutResponse(result.payoutId(), result.status()));
+        }
+
+        return ResponseEntity.created(location).location(location)
                 .body(new CreatePayoutResponse(result.payoutId(), result.status()));
     }
 }

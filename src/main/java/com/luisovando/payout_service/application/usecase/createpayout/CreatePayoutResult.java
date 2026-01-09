@@ -4,6 +4,7 @@ import java.util.UUID;
 
 public record CreatePayoutResult(
         UUID payoutId,
-        String status
+        String status,
+        boolean created
 ) {
 }

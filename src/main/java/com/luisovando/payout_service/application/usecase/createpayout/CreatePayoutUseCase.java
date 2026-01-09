@@ -1,9 +1,9 @@
 package com.luisovando.payout_service.application.usecase.createpayout;
 
-import com.luisovando.payout_service.domain.valueobject.MoneyVO;
 import com.luisovando.payout_service.infrastructure.persistence.entity.PayoutEntity;
 import com.luisovando.payout_service.infrastructure.persistence.repository.PayoutRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -42,22 +42,38 @@ public class CreatePayoutUseCase {
     public CreatePayoutResult execute(CreatePayoutCommand command) {
         this.validate(command);
 
-        Optional<PayoutEntity> payout = this.payoutRepository.findByCompanyIdAndIdempotencyKey(command.companyId(), command.idempotencyKey());
-
-        if (payout.isPresent()) {
-            return new CreatePayoutResult(payout.get().getId(), payout.get().getStatus());
+        Optional<PayoutEntity> existingPayout = this.payoutRepository.findByCompanyIdAndIdempotencyKey(command.companyId(), command.idempotencyKey());
+        if (existingPayout.isPresent()) {
+            return this.createResultFromExistingPayout(existingPayout.get());
         }
 
-        PayoutEntity newPayout = PayoutEntity.createNew(
-                command.companyId(),
-                command.money().amount(),
-                command.money().currency().value(),
-                INITIAL_STATUS,
-                command.idempotencyKey()
-        );
+        try {
+            PayoutEntity newPayout = PayoutEntity.createNew(
+                    command.companyId(),
+                    command.money().amount(),
+                    command.money().currency().value(),
+                    INITIAL_STATUS,
+                    command.idempotencyKey()
+            );
 
-        PayoutEntity saved = this.payoutRepository.save(newPayout);
+            PayoutEntity saved = this.payoutRepository.save(newPayout);
 
-        return new CreatePayoutResult(saved.getId(), saved.getStatus());
+            return new CreatePayoutResult(saved.getId(), saved.getStatus(), true);
+        } catch (DataIntegrityViolationException e) {
+            Throwable cause = e.getMostSpecificCause();
+            String message = (cause != null) ? cause.getMessage() : null;
+            if (cause != null && message.contains("uk_payouts_company_id_idempotency_key")) {
+                Optional<PayoutEntity> payout = this.payoutRepository.findByCompanyIdAndIdempotencyKey(command.companyId(), command.idempotencyKey());
+                if (payout.isPresent()) {
+                    return this.createResultFromExistingPayout(payout.get());
+                }
+                throw new IllegalStateException("Idempotency conflict detected but existing payout not found", e);
+            }
+            throw e;
+        }
+    }
+
+    private CreatePayoutResult createResultFromExistingPayout(PayoutEntity existingPayout) {
+        return new CreatePayoutResult(existingPayout.getId(), existingPayout.getStatus(), false);
     }
 }
