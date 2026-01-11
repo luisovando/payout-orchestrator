@@ -1,5 +1,6 @@
 package com.luisovando.payout_service.application.usecase.createpayout;
 
+import com.luisovando.payout_service.domain.exceptions.IdempotencyConflictException;
 import com.luisovando.payout_service.infrastructure.persistence.entity.PayoutEntity;
 import com.luisovando.payout_service.infrastructure.persistence.repository.PayoutRepository;
 import jakarta.transaction.Transactional;
@@ -44,7 +45,7 @@ public class CreatePayoutUseCase {
 
         Optional<PayoutEntity> existingPayout = this.payoutRepository.findByCompanyIdAndIdempotencyKey(command.companyId(), command.idempotencyKey());
         if (existingPayout.isPresent()) {
-            return this.createResultFromExistingPayout(existingPayout.get());
+            return this.createResultFromExistingPayout(existingPayout.get(), command);
         }
 
         try {
@@ -62,10 +63,10 @@ public class CreatePayoutUseCase {
         } catch (DataIntegrityViolationException e) {
             Throwable cause = e.getMostSpecificCause();
             String message = (cause != null) ? cause.getMessage() : null;
-            if (cause != null && message.contains("uk_payouts_company_id_idempotency_key")) {
+            if (cause != null && (message != null && message.contains("uk_payouts_company_id_idempotency_key"))) {
                 Optional<PayoutEntity> payout = this.payoutRepository.findByCompanyIdAndIdempotencyKey(command.companyId(), command.idempotencyKey());
                 if (payout.isPresent()) {
-                    return this.createResultFromExistingPayout(payout.get());
+                    return this.createResultFromExistingPayout(payout.get(), command);
                 }
                 throw new IllegalStateException("Idempotency conflict detected but existing payout not found", e);
             }
@@ -73,7 +74,18 @@ public class CreatePayoutUseCase {
         }
     }
 
-    private CreatePayoutResult createResultFromExistingPayout(PayoutEntity existingPayout) {
+    private CreatePayoutResult createResultFromExistingPayout(PayoutEntity existingPayout, CreatePayoutCommand command) {
+        validateMoneyAndCurrencyMatch(existingPayout, command);
         return new CreatePayoutResult(existingPayout.getId(), existingPayout.getStatus(), false);
+    }
+
+    private void validateMoneyAndCurrencyMatch(PayoutEntity existingPayout, CreatePayoutCommand command) {
+        if (existingPayout.getAmount().compareTo(command.money().amount()) != 0) {
+            throw new IdempotencyConflictException("Money amount differs from existing payout");
+        }
+        
+        if (!existingPayout.getCurrency().equals(command.money().currency().value())) {
+            throw new IdempotencyConflictException("Currency differs from existing payout");
+        }
     }
 }

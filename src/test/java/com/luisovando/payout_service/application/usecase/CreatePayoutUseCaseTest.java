@@ -3,6 +3,7 @@ package com.luisovando.payout_service.application.usecase;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutCommand;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutResult;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutUseCase;
+import com.luisovando.payout_service.domain.exceptions.IdempotencyConflictException;
 import com.luisovando.payout_service.domain.valueobject.MoneyVO;
 import com.luisovando.payout_service.infrastructure.persistence.entity.PayoutEntity;
 import com.luisovando.payout_service.infrastructure.persistence.repository.PayoutRepository;
@@ -224,5 +225,80 @@ public class CreatePayoutUseCaseTest {
                 .hasMessageContaining("idempotencyKey must not be blank");
 
         verifyNoInteractions(payoutRepository);
+    }
+
+    
+    @Test
+    void shouldThrowWhenMoneyDiffersFromExistingPayout() {
+        PayoutEntity existing = PayoutEntity.createNew(
+                companyId, 
+                new BigDecimal("1000.50"), 
+                "USD", 
+                "PROCESSING", 
+                idempotencyKey);
+        
+        when(payoutRepository.findByCompanyIdAndIdempotencyKey(eq(companyId), eq(idempotencyKey)))
+                .thenReturn(Optional.of(existing));
+
+        CreatePayoutCommand command = new CreatePayoutCommand(
+                companyId,
+                MoneyVO.of(new BigDecimal("2000.00"), "USD"), // Different amount
+                idempotencyKey
+        );
+
+        assertThatThrownBy(() -> useCase.execute(command))
+                .isInstanceOf(IdempotencyConflictException.class)
+                .hasMessage("Money amount differs from existing payout");
+    }
+
+@Test
+    void shouldThrowWhenCurrencyDiffersFromExistingPayout() {
+        PayoutEntity existing = PayoutEntity.createNew(
+                companyId, 
+                new BigDecimal("1000.50"), 
+                "USD", 
+                "PROCESSING", 
+                idempotencyKey);
+        
+        when(payoutRepository.findByCompanyIdAndIdempotencyKey(eq(companyId), eq(idempotencyKey)))
+                .thenReturn(Optional.of(existing));
+
+        CreatePayoutCommand command = new CreatePayoutCommand(
+                companyId,
+                MoneyVO.of(new BigDecimal("1000.50"), "EUR"), // Different currency
+                idempotencyKey
+        );
+
+        assertThatThrownBy(() -> useCase.execute(command))
+                .isInstanceOf(IdempotencyConflictException.class)
+                .hasMessage("Currency differs from existing payout");
+    }
+
+    @Test
+    void shouldReturnOkWhenMoneyAndCurrencyMatchExistingPayout() {
+        PayoutEntity existing = PayoutEntity.createNew(
+                companyId, 
+                new BigDecimal("1000.50"), 
+                "USD", 
+                "PROCESSING", 
+                idempotencyKey);
+        
+        when(payoutRepository.findByCompanyIdAndIdempotencyKey(eq(companyId), eq(idempotencyKey)))
+                .thenReturn(Optional.of(existing));
+
+        CreatePayoutCommand command = new CreatePayoutCommand(
+                companyId,
+                MoneyVO.of(new BigDecimal("1000.5"), "USD"), // Same amount and currency
+                idempotencyKey
+        );
+
+        CreatePayoutResult result = useCase.execute(command);
+
+        assertThat(result.payoutId()).isEqualTo(existing.getId());
+        assertThat(result.status()).isEqualTo(existing.getStatus());
+        assertThat(result.created()).isFalse();
+        
+        verify(payoutRepository, never()).save(any(PayoutEntity.class));
+        verify(payoutRepository, times(1)).findByCompanyIdAndIdempotencyKey(eq(companyId), eq(idempotencyKey));
     }
 }

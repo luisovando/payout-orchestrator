@@ -6,6 +6,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.luisovando.payout_service.domain.exceptions.IdempotencyConflictException;
+
 import java.time.Instant;
 
 @RestControllerAdvice
@@ -33,6 +35,19 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleIdempotencyConflict(IdempotencyConflictException exception) {
+        ApiErrorResponse body = new ApiErrorResponse(
+            "IDEMPOTENCY_CONFLICT",
+            "The same idempotency key was used with different request parameters",
+            Instant.now()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+
+    }
+
+    @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception exception) {
         ApiErrorResponse body = new ApiErrorResponse(
                 "INTERNAL_ERROR",

@@ -3,6 +3,7 @@ package com.luisovando.payout_service.infrastructure.web.payout;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutCommand;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutResult;
 import com.luisovando.payout_service.application.usecase.createpayout.CreatePayoutUseCase;
+import com.luisovando.payout_service.domain.exceptions.IdempotencyConflictException;
 import com.luisovando.payout_service.infrastructure.web.error.ApiExceptionHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -100,7 +101,6 @@ public class PayoutControllerTest {
         verifyNoInteractions(createPayoutUseCase);
     }
 
-
     @Test
     void shouldReturn400WhenUseCaseThrowsIllegalArgument() throws Exception {
         when(createPayoutUseCase.execute(any(CreatePayoutCommand.class)))
@@ -173,7 +173,24 @@ public class PayoutControllerTest {
         verify(createPayoutUseCase, times(1)).execute(any(CreatePayoutCommand.class));
     }
 
-    
+    @Test
+    void shouldReturn409WhenIdempotencyConflict() throws Exception {
+        when(createPayoutUseCase.execute(any(CreatePayoutCommand.class)))
+                .thenThrow(new IdempotencyConflictException("idempotency key already used"));
+
+        mockMvc.perform(post("/payouts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("""
+                {
+                    "companyId": "11111111-1111-1111-1111-111111111111",
+                    "amount": "1000.50",
+                    "currency": "USD",
+                    "idempotencyKey": "test-key-1"
+                }
+                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+    }
 
     @TestConfiguration
     static class TestConfig {
